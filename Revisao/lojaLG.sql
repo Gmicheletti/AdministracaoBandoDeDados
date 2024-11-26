@@ -140,3 +140,148 @@ VALUES
 (3, 4, 2, 20.00, 40.00),
 (6, 8, 3, 15.00, 45.00),
 (11, 7, 2, 30.00, 60.00);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+------------------------------OUTROS-------------------------------
+
+CREATE SCHEMA IF NOT EXISTS LojaLG;
+
+USE LojaLG;
+
+CREATE TABLE IF NOT EXISTS ITENS_VENDA(
+	idItemVenda INT NOT NULL PRIMARY KEY AUTO_INCREMENT,
+    fkVendas INT NOT NULL,
+    fkProdutos INT NOT NULL,
+    quantidade INT NOT NULL,
+    valorUnitario DOUBLE NOT NULL,
+    valorTotal DOUBLE NOT NULL,
+    
+    FOREIGN KEY (fkProdutos) REFERENCES PRODUTOS(idProduto),
+    FOREIGN KEY (fkVendas) REFERENCES VENDAS(idVenda)
+);
+
+
+INSERT INTO PRODUTOS (nome, preco_compra, preco_venda, quantidade)
+VALUES 
+('Arroz Tio João', 20.00, 25.00, 50),
+('Feijão Camil', 15.00, 20.00, 40);
+
+
+------------------------------VIEW-------------------------------
+
+CREATE OR REPLACE VIEW vw_total_vendas_por_cliente AS
+SELECT C.nome, SUM(V.totalVenda) FROM CLIENTES AS C
+INNER JOIN VENDAS AS V
+ON V.fkCliente = C.idCliente
+GROUP BY C.nome;
+SELECT * FROM vw_total_vendas_por_cliente;
+
+
+------------------------------FUNCTION-------------------------------
+
+DELIMITER -$-$
+ CREATE FUNCTION fn_total_vendas_cliente(idCliente INT)
+ RETURNS INT DETERMINISTIC
+ BEGIN
+ 
+ DECLARE result INT;
+ 
+ SET result = (SELECT COUNT(idVenda) FROM VENDAS AS V
+                WHERE V.fkCliente = idCliente);
+ 
+ RETURN result;
+ 
+ END -$-$
+ DELIMITER -;
+ SELECT fn_total_vendas_cliente(2)
+
+------------------------------PROCEDURE-------------------------------
+
+DELIMITER -$-$
+CREATE PROCEDURE statusPagamento(IN idVenda INT, OUT status VARCHAR(50))
+BEGIN
+
+SET status = (SELECT statusPagamento FROM VENDAS AS V WHERE V.idVenda = idVenda);
+
+END -$-$
+DELIMITER -;
+
+call statusPagamento(1,@status);
+SELECT @status;
+
+------------------------------TRIGGER-------------------------------
+
+DELIMITER -$-$
+CREATE TRIGGER atualizaEstoque
+BEFORE INSERT ON ITENS_VENDA
+FOR EACH ROW
+BEGIN
+
+DECLARE qtdeProduto INT;
+
+SET qtdeProduto = (SELECT quantidade FROM PRODUTOS AS P
+					WHERE P.idProduto = NEW.fkProdutos);
+
+IF(qtdeProduto >= NEW.quantidade) THEN
+	UPDATE PRODUTOS
+	SET quantidade = qtdeProduto - NEW.quantidade
+	WHERE idProduto = NEW.fkProdutos;
+ELSE
+	SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Estoque insuficiente!';
+END IF;
+
+END -$-$
+DELIMITER -;
+
+INSERT INTO ITENS_VENDA (fkVendas, fkProdutos, quantidade, valorUnitario, valorTotal) VALUES  (1, 1, 52, 15.00, 30.00);
+INSERT INTO ITENS_VENDA (fkVendas, fkProdutos, quantidade, valorUnitario, valorTotal) VALUES  (1, 1, 2, 15.00, 30.00);
+
+------------------------------INDEXES-------------------------------
+
+CREATE INDEX itens_venda_fks ON ITENS_VENDA(fkVendas, fkProdutos);
+
+CREATE UNIQUE INDEX nome_preco_uniq ON PRODUTOS(nome, preco_compra); 
+
+DROP INDEX idx_dataVenda ON VENDAS;
+
+SHOW INDEX FROM ITENS_VENDA;
+
+EXPLAIN SELECT * FROM PRODUTOS WHERE nome = 'Tio João';
+
+------------------------------ROLES-------------------------------
+
+    CREATE ROLE 'GerenteVendas'@'%';
+    GRANT INSERT, UPDATE, SELECT ON lojaLG.VENDAS TO 'GerenteVendas'@'%';
+    GRANT INSERT, SELECT ON lojaLG.ITENS_VENDA TO 'GerenteVendas'@'%';
+    GRANT SELECT ON lojaLG.PRODUTOS TO 'GerenteVendas'@'%';
+    GRANT SELECT ON lojaLG.CLIENTES TO 'GerenteVendas'@'%';
+    SHOW GRANTS FOR 'GerenteVendas'@'%';
+
+    SELECT * FROM mysql.user;
+
+-- Após criar a role, atribua-a a um usuário chamado gerente_vendas.
+
+    CREATE USER 'Lucas'@'%' IDENTIFIED BY '123456';
+    GRANT 'GerenteVendas'@'%' TO 'Lucas'@'%';
+    SET DEFAULT ROLE 'GerenteVendas'@'%' TO 'Lucas'@'%';
+    SHOW GRANTS FOR 'Lucas'@'%';
+
+
+-- REMOVER PERMISSAO
+    REVOKE 'GerenteVendas'@'%' FROM 'Lucas'@'%';
